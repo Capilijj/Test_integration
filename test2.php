@@ -1,118 +1,155 @@
 <?php
 /**
  * Driver Receiver - Laptop 2 (RECEIVER)
- * Magpapadala ng request signal bago tumanggap ng data.
+ * Added Feature: Information Request System
  */
 
+// Create data directory if it doesn't exist
 $data_dir = __DIR__ . '/drivers_data';
-if (!is_dir($data_dir)) mkdir($data_dir, 0777, true);
+if (!is_dir($data_dir)) {
+    mkdir($data_dir, 0777, true);
+}
 
 $drivers_file = $data_dir . '/drivers.json';
-$request_file = $data_dir . '/request_signal.txt';
+$log_file = $data_dir . '/receive_log.txt';
+$request_file = $data_dir . '/pending_request.json'; // New file for requests
 
-// Logic 1: API Check para sa Sender
-if (isset($_GET['check_request'])) {
+// Initialize files if they don't exist
+if (!file_exists($drivers_file)) file_put_contents($drivers_file, json_encode([]));
+if (!file_exists($request_file)) file_put_contents($request_file, json_encode(['pending' => false]));
+
+function load_drivers() {
+    global $drivers_file;
+    return json_decode(file_get_contents($drivers_file), true) ?? [];
+}
+
+function save_drivers($drivers) {
+    global $drivers_file;
+    file_put_contents($drivers_file, json_encode($drivers, JSON_PRETTY_PRINT));
+}
+
+function log_message($message) {
+    global $log_file;
+    $timestamp = date('Y-m-d H:i:s');
+    file_put_contents($log_file, "[$timestamp] $message\n", FILE_APPEND);
+}
+
+// --- NEW FEATURE: HANDLE REQUEST ACTIONS ---
+if (isset($_POST['action']) && $_POST['action'] === 'create_request') {
+    $request_data = [
+        'pending' => true,
+        'message' => htmlspecialchars($_POST['request_msg']),
+        'requested_at' => date('Y-m-d H:i:s')
+    ];
+    file_put_contents($request_file, json_encode($request_data));
+    log_message("REQUEST SENT: " . $_POST['request_msg']);
+    header('Location: ' . $_SERVER['PHP_SELF'] . '?success=1');
+    exit;
+}
+
+// --- NEW FEATURE: API FOR SENDER TO CHECK REQUESTS ---
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['check_request'])) {
     header('Content-Type: application/json');
-    $has_request = file_exists($request_file);
-    echo json_encode(['has_request' => $has_request]);
+    $req = json_decode(file_get_contents($request_file), true);
+    echo json_encode($req);
+    
+    // Once the sender reads it, we could mark it as not pending, 
+    // but usually, we wait for the sender to "fulfill" it.
     exit;
 }
 
-// Logic 2: Paggawa ng Request (kapag pinindot ang button sa UI)
-if (isset($_GET['make_request'])) {
-    file_put_contents($request_file, 'PENDING_' . time());
-    header('Location: receive.php?status=requested');
-    exit;
-}
-
-// Logic 3: Pag-clear ng lahat (Reset)
-if (isset($_GET['clear'])) {
-    if (file_exists($request_file)) unlink($request_file);
-    file_put_contents($drivers_file, json_encode([]));
-    header('Location: receive.php');
-    exit;
-}
-
-// Logic 4: Pag-receive ng Data via POST
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// Handle API POST from Sender (Existing code)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
+    header('Content-Type: application/json; charset=utf-8');
     $body = file_get_contents('php://input');
     $input = json_decode($body, true);
-
+    
     if ($input) {
-        $drivers = file_exists($drivers_file) ? json_decode(file_get_contents($drivers_file), true) : [];
-        $new_entry = [
+        $driver = [
+            'id' => uniqid('DRV_', true),
             'driver_name' => htmlspecialchars($input['driver_name']),
             'license_number' => htmlspecialchars($input['license_number']),
-            'received_at' => date('H:i:s'),
-            'from' => $input['sent_from']
+            'sent_from' => htmlspecialchars($input['sent_from'] ?? 'Unknown'),
+            'sent_at' => $input['sent_at'] ?? date('Y-m-d H:i:s'),
+            'received_at' => date('Y-m-d H:i:s'),
+            'received_ip' => $_SERVER['REMOTE_ADDR'] ?? 'Unknown'
         ];
-        array_unshift($drivers, $new_entry);
-        file_put_contents($drivers_file, json_encode($drivers));
-
-        // Burahin ang request signal dahil nasagot na
-        if (file_exists($request_file)) unlink($request_file);
         
-        echo json_encode(['status' => 'success']);
+        $drivers = load_drivers();
+        array_unshift($drivers, $driver);
+        save_drivers(array_slice($drivers, 0, 100));
+
+        // Auto-clear pending request once sender sends info
+        file_put_contents($request_file, json_encode(['pending' => false]));
+        
+        echo json_encode(['status' => 'success', 'data' => $driver]);
+        exit;
     }
-    exit;
 }
 
-$drivers = file_exists($drivers_file) ? json_decode(file_get_contents($drivers_file), true) : [];
-$is_waiting = file_exists($request_file);
+// UI Data
+$drivers = load_drivers();
+$request_status = json_decode(file_get_contents($request_file), true);
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Laptop 2 - Receiver</title>
+    <title>Driver Receiver - Laptop 2</title>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #e0e5ec; padding: 40px; }
-        .container { max-width: 600px; margin: 0 auto; }
-        .panel { background: #f0f2f5; padding: 25px; border-radius: 15px; box-shadow: 8px 8px 15px #b8b9be, -8px -8px 15px #ffffff; text-align: center; }
-        .btn { padding: 12px 25px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.3s; margin: 5px; }
-        .btn-req { background: #4CAF50; color: white; }
-        .btn-clear { background: #f44336; color: white; }
-        .status-box { margin: 20px 0; padding: 15px; border-radius: 10px; font-weight: bold; }
-        .waiting { background: #fff9c4; color: #f57f17; border: 1px solid #fbc02d; }
-        .idle { background: #e8e8e8; color: #757575; }
-        .list { text-align: left; margin-top: 20px; background: white; border-radius: 10px; padding: 15px; }
-        .item { border-bottom: 1px solid #eee; padding: 10px 0; }
+        /* ... Keep your existing CSS ... */
+        body { font-family: sans-serif; background: #f4f7f6; padding: 20px; }
+        .container { max-width: 900px; margin: auto; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .btn { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; color: white; }
+        .btn-blue { background: #3498db; }
+        .request-box { background: #fff3cd; border-left: 5px solid #ffc107; padding: 15px; margin-bottom: 20px; }
+        input[type="text"] { width: 70%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        .status-badge { padding: 5px 10px; border-radius: 12px; font-size: 0.8em; font-weight: bold; }
+        .bg-pending { background: #ffc107; color: #856404; }
+        .bg-clear { background: #28a745; color: white; }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="panel">
-            <h1>📥 Laptop 2 (Receiver)</h1>
-            
-            <?php if ($is_waiting): ?>
-                <div class="status-box waiting">⌛ Kasalukuyang naghihintay ng data mula sa Laptop 1...</div>
+        <h1>📥 Driver Receiver</h1>
+
+        <div class="card">
+            <h3>📢 Request Info from Sender</h3>
+            <p style="font-size: 0.9em; color: #666;">Utusan ang Laptop 1 na mag-send ng data.</p>
+            <form method="POST" style="margin-top: 15px;">
+                <input type="hidden" name="action" value="create_request">
+                <input type="text" name="request_msg" placeholder="Anong info ang kailangan? (e.g. Send latest driver)" required>
+                <button type="submit" class="btn btn-blue">Send Request</button>
+            </form>
+
+            <?php if ($request_status['pending']): ?>
+                <div class="request-box" style="margin-top: 15px;">
+                    <strong>Current Pending Request:</strong><br>
+                    "<?php echo $request_status['message']; ?>" 
+                    <span class="status-badge bg-pending">Waiting for Sender...</span>
+                </div>
             <?php else: ?>
-                <div class="status-box idle">😴 Idle (Walang active request)</div>
+                <p style="margin-top: 10px;"><span class="status-badge bg-clear">No Pending Requests</span></p>
             <?php endif; ?>
+        </div>
 
-            <div class="controls">
-                <a href="?make_request=1"><button class="btn btn-req">Pindutin para mag-Request sa Laptop 1</button></a>
-                <a href="?clear=1"><button class="btn btn-clear">Clear All</button></a>
-            </div>
-
-            <div class="list">
-                <h3>Mga Natanggap na Driver:</h3>
-                <?php if (empty($drivers)): ?>
-                    <p style="color:#999">Wala pang record.</p>
-                <?php else: ?>
-                    <?php foreach ($drivers as $d): ?>
-                        <div class="item">
-                            <strong>🚗 <?php echo $d['driver_name']; ?></strong><br>
-                            <small>License: <?php echo $d['license_number']; ?> | Oras: <?php echo $d['received_at']; ?></small>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-            </div>
+        <div class="card">
+            <h2>📦 Received Drivers (Total: <?php echo count($drivers); ?>)</h2>
+            <hr>
+            <?php foreach ($drivers as $d): ?>
+                <div style="border-bottom: 1px solid #eee; padding: 10px 0;">
+                    <strong>🚗 <?php echo $d['driver_name']; ?></strong> - <?php echo $d['license_number']; ?><br>
+                    <small>From: <?php echo $d['sent_from']; ?> | Rec: <?php echo $d['received_at']; ?></small>
+                </div>
+            <?php endforeach; ?>
         </div>
     </div>
+
     <script>
-        // Auto refresh para makita ang bagong data
-        setTimeout(() => { if(!window.location.search.includes('status=requested')) location.reload(); }, 3000);
+        // Refresh every 10 seconds to see if Laptop 1 responded
+        setTimeout(() => { location.reload(); }, 10000);
     </script>
 </body>
 </html>
