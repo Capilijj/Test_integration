@@ -9,7 +9,7 @@ $receiver_ip = '10.225.157.136';
 $receiver_port = '3000';
 // Note: Sa receiver script mo, "receive.php" ba ang filename o "receiver.php"? 
 // Pakisigurado na tugma ito sa baba:
-$receiver_url = "http://{$receiver_ip}:{$receiver_port}/receive.php";
+$receiver_url = "http://{$receiver_ip}:{$receiver_port}/test2.php";
 $timeout = 10;
 
 // Check if form was submitted
@@ -111,7 +111,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
 
         <div class="panel">
-            <h2>📝 Driver Information</h2>
+            <h2>� Request Status from Receiver (Test 2)</h2>
+            <div id="requestStatus">
+                <p>No pending requests from Laptop 2.</p>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>�📝 Driver Information</h2>
             <form method="POST" id="driverForm">
                 <div class="form-group">
                     <label>Driver Name</label>
@@ -139,10 +146,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 const box = document.getElementById('requestBox');
                 const msg = document.getElementById('requestMsg');
+                const statusDiv = document.getElementById('requestStatus');
                 
                 if (data.pending === true) {
                     box.style.display = 'block';
                     msg.innerText = `Message: "${data.message}" (Requested at: ${data.requested_at})`;
+                    statusDiv.innerHTML = `<p style="color: #856404; font-weight: bold;">DISPLAYING REQUEST FROM TEST 2:</p><p>"${data.message}"</p><p><small>Requested at: ${data.requested_at}</small></p>`;
                     
                     // Optional: Highlight the inputs if they are empty
                     if(document.getElementById('driver_name').value === "") {
@@ -150,6 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 } else {
                     box.style.display = 'none';
+                    statusDiv.innerHTML = '<p>No pending requests from Laptop 2.</p>';
                 }
             } catch (error) {
                 console.log("Waiting for Laptop 2 to be online...");

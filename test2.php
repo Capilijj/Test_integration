@@ -50,6 +50,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'create_request') {
 // --- NEW FEATURE: API FOR SENDER TO CHECK REQUESTS ---
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['check_request'])) {
     header('Content-Type: application/json');
+    header('Access-Control-Allow-Origin: *');
     $req = json_decode(file_get_contents($request_file), true);
     echo json_encode($req);
     
